@@ -4,6 +4,6 @@ Some Python utils
 To import:
 ```
 import sys
-sys.path.append("path/utils/")
+sys.path.append("path/mache-utils/")
 import utils 
 ```
