@@ -2,7 +2,6 @@ import datetime
 import logging
 import os
 import psutil
-import resource
 import textwrap
 import time
 import torch
@@ -62,7 +61,7 @@ class MemoryUtils:
 
         self.sys_total_ram = psutil.virtual_memory().total
 
-    def convert(self, x, unit1='b', unit2='mb'):
+    def convert_unit(self, x, unit1='b', unit2='mb'):
         factors = {'b': 0, 'kb': 1, 'mb': 2, 'gb': 3, 'tb': 4}
         f1 = factors.get(unit1.lower(), 0)
         f2 = factors.get(unit2.lower(), 2)
@@ -87,25 +86,25 @@ class MemoryUtils:
 
         return memory_mb
 
-    def set_ram_limit(self, percentage=None, custom_limit=None):
-        if percentage and custom_limit:
-            raise AttributeError('Percentage and custom limit conflict')
+    # def set_ram_limit(self, percentage=None, custom_limit=None):
+    #     if percentage and custom_limit:
+    #         raise AttributeError('Percentage and custom limit conflict')
         
-        elif percentage:
-            max_ram = self.sys_total_ram * percentage / 100
+    #     elif percentage:
+    #         max_ram = self.sys_total_ram * percentage / 100
 
-        elif custom_limit: 
-            value = custom_limit[0]
-            unit = custom_limit[1]
-            max_ram = self.convert_unit(value, unit1=unit, unit2='b')
+    #     elif custom_limit: 
+    #         value = custom_limit[0]
+    #         unit = custom_limit[1]
+    #         max_ram = self.convert_unit(value, unit1=unit, unit2='b')
 
-        else:
-            raise AttributeError('No values provided')
+    #     else:
+    #         raise AttributeError('No values provided')
 
-        max_ram = int(max_ram)
-        soft, hard = resource.getrlimit(resource.RLIMIT_DATA)
-        resource.setrlimit(resource.RLIMIT_DATA, (max_ram, hard))
-        print(f'Set max RAM to {self.convert_unit(max_ram) :.1f} MB')
+    #     max_ram = int(max_ram)
+    #     soft, hard = resource.getrlimit(resource.RLIMIT_DATA)
+    #     resource.setrlimit(resource.RLIMIT_DATA, (max_ram, hard))
+    #     print(f'Set max RAM to {self.convert_unit(max_ram) :.1f} MB')
 
 
     def get_processes(self, top=10):
@@ -153,3 +152,13 @@ class TimeUtils:
         day_of_week = timestamp.weekday()
         return self.days[day_of_week]
 
+def timer(func):
+    def wrapper(*args, **kwargs):
+
+        start_time = time.perf_counter()
+        result = func(*args, **kwargs)
+        end_time = time.perf_counter()
+
+        print(f"Execution time: {end_time - start_time:.6f} seconds")
+        return result
+    return wrapper
