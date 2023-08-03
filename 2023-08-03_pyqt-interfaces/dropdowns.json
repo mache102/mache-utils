@@ -1,0 +1,164 @@
+[
+    {
+        "name": "File", 
+        "actions": [
+            {
+                "action_name": "Open",
+                "quick": "Ctrl+O",
+                "connect": "open_folder"
+            },
+
+            {
+                "action_name": "Save To",
+                "quick": "Ctrl+S",
+                "connect": "save_files_to"
+            },
+
+            {
+                "action_name": "Export",
+                "quick": "Ctrl+E",
+                "connect": "export_files"
+            },
+
+            {
+                "action_name": "Close",
+                "quick": "Ctrl+W",
+                "connect": "close_window"
+            }
+        ]
+    },
+
+    {
+        "name": "Edit",
+        "actions": [
+            {
+                "action_name": "Undo",
+                "quick": "Ctrl+Z",
+                "connect": null
+            },
+
+            {
+                "action_name": "Redo",
+                "quick": "Ctrl+Y",
+                "connect": null
+            },
+
+            {
+                "action_name": "Cut",
+                "quick": "Ctrl+X",
+                "connect": null
+            },
+
+            {
+                "action_name": "Copy",
+                "quick": "Ctrl+C",
+                "connect": null
+            },
+
+            {
+                "action_name": "Paste",
+                "quick": "Ctrl+V",
+                "connect": null
+            }
+        ]
+        
+    },
+
+    {
+        "name": "Selection",
+        "actions": [
+            {
+                "action_name": "Select All",
+                "quick": "Ctrl+A",
+                "connect": "select_all_fileItems"
+            },
+
+            {
+                "action_name": "Clear Selection",
+                "quick": null,
+                "connect": "clear_fileItem_selection"
+            },
+
+            {
+                "action_name": "Delete Selection",
+                "quick": "Del",
+                "connect": "delete_fileItem_selection"
+            },
+
+            {
+                "action_name": "Rescan Selection",
+                "quick": null,
+                "connect": "rescan_fileItem_selection"
+            },
+
+            {
+                "action_name": "Move Selection",
+                "quick": null,
+                "connect": "move_fileItem_selection"
+            },
+
+            {
+                "action_name": "Discard Unselected",
+                "quick": null,
+                "connect": "discard_unselected"
+            }
+        ]
+    },
+
+    {
+        "name": "View",
+        "actions": [
+            {
+                "action_name": "Zoom In",
+                "quick": "Ctrl++",
+                "connect": null
+            },
+
+            {
+                "action_name": "Zoom Out",
+                "quick": "Ctrl+-",
+                "connect": null
+            },
+
+            {
+                "action_name": "Actual Size",
+                "quick": "Ctrl+0",
+                "connect": null
+            }
+        ]
+    },
+    
+    {
+        "name": "Help",
+        "actions": [
+            {
+                "action_name": "Help Contents",
+                "quick": null,
+                "connect": null
+            },
+
+            {
+                "action_name": "About",
+                "quick": null,
+                "connect": null
+            }
+        ]
+    }, 
+
+    {
+        "name": "Settings",
+        "actions": [
+            {
+                "action_name": "Preferences",
+                "quick": null,
+                "connect": null
+            },
+
+            {
+                "action_name": "Options",
+                "quick": null,
+                "connect": null
+            }
+        ]
+    }
+]

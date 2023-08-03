@@ -1,16 +1,34 @@
+import json 
 import numpy as np 
 import os
+import shutil
 import sys
 import time
 
+import PIL.Image, PIL.ImageOps
+from reportlab.lib.pagesizes import letter
+from reportlab.pdfgen import canvas
+
+from tkinter import *
+from tkinter import filedialog
 from tqdm import tqdm
 
-from PyQt5.QtWidgets import QApplication, QScrollArea, QVBoxLayout, QHBoxLayout, QLabel, QLineEdit, QWidget, QPushButton, QMenu, QAction
+
+
+from PyQt5.QtWidgets import QApplication, QScrollArea, QVBoxLayout, QHBoxLayout, QLabel, QLineEdit, QWidget, QPushButton, QMenu, QAction, QMessageBox, QInputDialog, QFileDialog
 from PyQt5.QtCore import Qt, pyqtSignal
 from PyQt5.QtGui import QImage, QPixmap
 
+FILE_DIR = "samples"
+FILE_EXTENSION = ".jpg"
 PREVIEW_IMAGE_WIDTH = 250
 DISPLAY_IMAGE_DEFAULT_WIDTH = 600 
+
+def check_consecutive(l):
+    # check if list is consecutive
+    n = len(l) - 1
+    return (sum(np.diff(sorted(l)) == 1) >= n)
+     
 
 class BetterQLabel(QLabel):
     def __init__(self, parent=None):
@@ -52,12 +70,10 @@ class BetterQLabel(QLabel):
         if isinstance(color, tuple):
             self.styles["background-color"] = "rgb({},{},{})".format(*color)
             self.updateStyleSheet()
-            # self.setStyleSheet("background-color: rgb({},{},{});".format(*color))
 
         elif color in self.colorDict:
             self.styles["background-color"] = "rgb({},{},{})".format(*self.colorDict[color])
             self.updateStyleSheet()
-            # self.setStyleSheet("background-color: rgb({},{},{});".format(*self.colorDict[color]))
 
         else: raise ValueError("Invalid color name: {}".format(color))
 
@@ -91,16 +107,14 @@ class BetterQLabel(QLabel):
 
 
 class ScrollbarWidget(QWidget):
-    def __init__(self, image_path):
+    def __init__(self, data, fp):
         super().__init__()
 
-        with open(image_path, 'rb') as f:
-            image_data = f.read()
 
-        image_name = image_path.split('/')[-1]
+        image_name = fp.split('/')[-1]
 
         # Convert the image_data to a QPixmap for the preview image
-        image = QImage.fromData(image_data)
+        image = QImage.fromData(data)
         pixmap = QPixmap.fromImage(image)
         pixmap = pixmap.scaledToWidth(PREVIEW_IMAGE_WIDTH)  # Set the width of the preview image
 
@@ -115,6 +129,7 @@ class ScrollbarWidget(QWidget):
         self.name.setContentsMargins(5, 0)
         self.name.setBorder(color="black", width=1)
         self.name.setFixedWidth(PREVIEW_IMAGE_WIDTH)
+        self.name.setFixedHeight(40)
         self.name.setAlignment(Qt.AlignCenter)
         self.name.setFontSize(20)
 
@@ -128,7 +143,18 @@ class ScrollbarWidget(QWidget):
 
 class HeaderWidget(QWidget):
     # Create a custom signal for the "Select All" action
-    select_all_triggered = pyqtSignal()
+    TRIGGER_select_all_fileItems = pyqtSignal()
+    TRIGGER_clear_fileItem_selection = pyqtSignal()
+    TRIGGER_delete_fileItem_selection = pyqtSignal()
+    TRIGGER_rescan_fileItem_selection = pyqtSignal()
+    TRIGGER_move_fileItem_selection = pyqtSignal()
+    TRIGGER_discard_unselected = pyqtSignal()
+
+    TRIGGER_open_folder = pyqtSignal()
+    TRIGGER_close_window = pyqtSignal()
+    TRIGGER_save_files_to = pyqtSignal()
+    TRIGGER_export_files = pyqtSignal()
+
 
     def __init__(self):
         super().__init__()
@@ -138,146 +164,8 @@ class HeaderWidget(QWidget):
         self.setLayout(layout)
 
         # List of dropdown names and their actions
-        dropdowns = [
-            {
-                "name": "File", 
-                "actions": [
-                    {
-                        "action_name": "Open",
-                        "quick": "Ctrl+O",
-                        "connect": None,
-                    },
-
-                    {
-                        "action_name": "Save",
-                        "quick": "Ctrl+S",
-                        "connect": None,
-                    },
-
-                    {
-                        "action_name": "Save As",
-                        "quick": None,
-                        "connect": None,
-                    },
-
-                    {
-                        "action_name": "Close",
-                        "quick": "Ctrl+W",
-                        "connect": None,
-                    },
-                ]
-            },
-
-            {
-                "name": "Edit",
-                "actions": [
-                    {
-                        "action_name": "Undo",
-                        "quick": "Ctrl+Z",
-                        "connect": None,
-                    },
-
-                    {
-                        "action_name": "Redo",
-                        "quick": "Ctrl+Y",
-                        "connect": None,
-                    },
-
-                    {
-                        "action_name": "Cut",
-                        "quick": "Ctrl+X",
-                        "connect": None,
-                    },
-
-                    {
-                        "action_name": "Copy",
-                        "quick": "Ctrl+C",
-                        "connect": None,
-                    },
-
-                    {
-                        "action_name": "Paste",
-                        "quick": "Ctrl+V",
-                        "connect": None,
-                    },
-                ]
-                
-            },
-
-            {
-                "name": "Selection",
-                "actions": [
-                    {
-                        "action_name": "Select All",
-                        "quick": "Ctrl+A",
-                        "connect": self.sel_all_fileItems,
-                    },
-
-                    {
-                        "action_name": "Clear Selection",
-                        "quick": None,
-                        "connect": None,
-                    },
-                ]
-            },
-
-            {
-                "name": "View",
-                "actions": [
-                    {
-                        "action_name": "Zoom In",
-                        "quick": "Ctrl++",
-                        "connect": None,
-                    },
-
-                    {
-                        "action_name": "Zoom Out",
-                        "quick": "Ctrl+-",
-                        "connect": None,
-                    },
-
-                    {
-                        "action_name": "Actual Size",
-                        "quick": "Ctrl+0",
-                        "connect": None,
-                    },
-                ]
-            },
-            
-            {
-                "name": "Help",
-                "actions": [
-                    {
-                        "action_name": "Help Contents",
-                        "quick": None,
-                        "connect": None,
-                    },
-
-                    {
-                        "action_name": "About",
-                        "quick": None,
-                        "connect": None,
-                    },
-                ]
-            }, 
-
-            {
-                "name": "Settings",
-                "actions": [
-                    {
-                        "action_name": "Preferences",
-                        "quick": None,
-                        "connect": None,
-                    },
-
-                    {
-                        "action_name": "Options",
-                        "quick": None,
-                        "connect": None,
-                    },
-                ]
-            },
-        ]
+        with open("dropdowns.json", "r") as f:
+            dropdowns = json.load(f)
 
         for dropdown in dropdowns:
             # Create a QPushButton for each dropdown
@@ -291,24 +179,49 @@ class HeaderWidget(QWidget):
             for action in dropdown["actions"]:
                 if action["quick"]:
                     curr_action = QAction(action["action_name"], self, shortcut=action["quick"])
-                    if action["connect"]:
-                        curr_action.triggered.connect(action["connect"])
                 else:
-                    curr_action = action["action_name"]
-                dropdown_menu.addAction(curr_action)
+                    curr_action = QAction(action["action_name"], self)
 
-            # # For "Selection" dropdown, add a clickable action with keyboard shortcut ctrl+A
-            # if dropdown_name == "Selection":
-            #     select_all_action = QAction("Select All", self, shortcut="Ctrl+A")
-            #     select_all_action.triggered.connect(self.sel_all_fileItems)
-            #     dropdown_menu.addAction(select_all_action)
+                if action["connect"]:
+                    curr_action.triggered.connect(getattr(self, action["connect"]))
+
+                dropdown_menu.addAction(curr_action)
 
             # Set the dropdown menu for the dropdown button
             dropdown_button.setMenu(dropdown_menu)
 
-    def sel_all_fileItems(self):
+    def select_all_fileItems(self):
         # Emit the custom signal when the "Select All" action is triggered
-        self.select_all_triggered.emit()
+        self.TRIGGER_select_all_fileItems.emit()
+
+    def clear_fileItem_selection(self):
+        # Emit the custom signal when the "Clear Selection" action is triggered
+        self.TRIGGER_clear_fileItem_selection.emit()
+
+    
+    def delete_fileItem_selection(self):
+        self.TRIGGER_delete_fileItem_selection.emit()
+
+    def rescan_fileItem_selection(self):
+        self.TRIGGER_rescan_fileItem_selection.emit()
+
+    def move_fileItem_selection(self):
+        self.TRIGGER_move_fileItem_selection.emit()
+
+    def discard_unselected(self):
+        self.TRIGGER_discard_unselected.emit()
+
+    def open_folder(self):
+        self.TRIGGER_open_folder.emit()
+
+    def close_window(self):
+        self.TRIGGER_close_window.emit()
+
+    def save_files_to(self):
+        self.TRIGGER_save_files_to.emit()
+
+    def export_files(self):
+        self.TRIGGER_export_files.emit()
 
 
 class RemoteCameraInterface(QWidget):
@@ -318,28 +231,46 @@ class RemoteCameraInterface(QWidget):
         # Set default window size
         self.setGeometry(100, 100, 1280, 720)
 
+        self.icon_lookup = {
+            "warning": QMessageBox.Warning,
+            "info": QMessageBox.Information,
+            "error": QMessageBox.Critical,
+            "question": QMessageBox.Question,
+        }
+        self.file_dir = FILE_DIR
+
         self.fileItems = []
         self.curr_fileIdxs = []
         self.prev_fileIdxs = []
 
         self.header = HeaderWidget()
-        self.header.select_all_triggered.connect(self.sel_all_fileItems)
+        self.header.TRIGGER_select_all_fileItems.connect(self.select_all_fileItems)
+        self.header.TRIGGER_clear_fileItem_selection.connect(self.clear_fileItem_selection)
+        self.header.TRIGGER_delete_fileItem_selection.connect(self.delete_fileItem_selection)
+        self.header.TRIGGER_rescan_fileItem_selection.connect(self.rescan_fileItem_selection)
+        self.header.TRIGGER_move_fileItem_selection.connect(self.move_fileItem_selection)
+        self.header.TRIGGER_discard_unselected.connect(self.discard_unselected)
 
-
-        # Create a file_item_ area to contain the preview images and captions
-        self.file_item_area = QScrollArea()
-        self.file_item_area.setWidgetResizable(True)
-        self.file_item_area.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
+        self.header.TRIGGER_open_folder.connect(self.open_folder)
+        self.header.TRIGGER_close_window.connect(self.close_window)
+        self.header.TRIGGER_save_files_to.connect(self.save_files_to)
+        self.header.TRIGGER_export_files.connect(self.export_files)
         
-        # Set the fixed width for the file_item_area
-        self.file_item_area.setFixedWidth(PREVIEW_IMAGE_WIDTH+100)
+
+        # Create a fileItem_ area to contain the preview images and captions
+        self.fileItem_area = QScrollArea()
+        self.fileItem_area.setWidgetResizable(True)
+        self.fileItem_area.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
+        
+        # Set the fixed width for the fileItem_area
+        self.fileItem_area.setFixedWidth(PREVIEW_IMAGE_WIDTH+100)
 
         # Create a container widget to hold the preview images and captions
-        self.file_item_area_content = QWidget(self.file_item_area)
-        self.file_item_area.setWidget(self.file_item_area_content)
+        self.fileItem_area_content = QWidget(self.fileItem_area)
+        self.fileItem_area.setWidget(self.fileItem_area_content)
 
         # Layout manager to arrange the images and captions vertically
-        self.file_item_area_layout = QVBoxLayout(self.file_item_area_content)
+        self.fileItem_area_layout = QVBoxLayout(self.fileItem_area_content)
 
 
 
@@ -353,7 +284,7 @@ class RemoteCameraInterface(QWidget):
         # alight display label to center of display area
         self.display_label.setAlignment(Qt.AlignCenter)
         # when mousedown, function
-        self.display_label.mousePressEvent = lambda event: self.select_sidebar
+        # self.display_label.mousePressEvent = lambda event: self.select_sidebar
 
         self.display_area.setWidget(self.display_label)
 
@@ -366,20 +297,20 @@ class RemoteCameraInterface(QWidget):
         self.hide_preview_images = False
 
         # menu for image previews
-        self.file_item_menu = QVBoxLayout()
-        self.file_item_menu.setAlignment(Qt.AlignTop)
+        self.fileItem_menu = QVBoxLayout()
+        self.fileItem_menu.setAlignment(Qt.AlignTop)
 
         self.preview_toggle_button = QPushButton("Hide Preview Images")
         self.preview_toggle_button.clicked.connect(self.toggle_sidebar)
 
-        self.custom_sel_label = BetterQLabel("\nEnter a range to select:")
-        self.custom_sel = QLineEdit()
-        self.custom_sel.setPlaceholderText("e.g. 1-5, 8, 11-13")
-        self.custom_sel.returnPressed.connect(self.parse_custom_sel)
+        self.custom_fileItem_selection_label = BetterQLabel("\nEnter a range to select:")
+        self.custom_fileItem_selection = QLineEdit()
+        self.custom_fileItem_selection.setPlaceholderText("e.g. 1-5, 8, 11-13")
+        self.custom_fileItem_selection.returnPressed.connect(self.parse_custom_fileItem_selection)
 
-        self.file_item_menu.addWidget(self.preview_toggle_button)
-        self.file_item_menu.addWidget(self.custom_sel_label)
-        self.file_item_menu.addWidget(self.custom_sel)
+        self.fileItem_menu.addWidget(self.preview_toggle_button)
+        self.fileItem_menu.addWidget(self.custom_fileItem_selection_label)
+        self.fileItem_menu.addWidget(self.custom_fileItem_selection)
 
         # menu for the displayed image
         self.display_menu = QVBoxLayout()
@@ -392,7 +323,7 @@ class RemoteCameraInterface(QWidget):
         self.scale_factors_bounds = [0, len(self.scale_factors) - 1]
 
         self.display_image_config = {
-            "image_path": None,
+            "fp": None,
             "scale_factor": self.default_scale_idx,
             "original_size": None,
             "pixmap": None,
@@ -416,11 +347,11 @@ class RemoteCameraInterface(QWidget):
         self.display_menu.addWidget(self.zoom_percentage)
 
 
-        # Make file_item area occupy left half of interface, and display label occupy right half
+        # Make fileItem area occupy left half of interface, and display label occupy right half
         layout = QVBoxLayout()
         main_layout = QHBoxLayout()
-        main_layout.addWidget(self.file_item_area, stretch=4)
-        main_layout.addLayout(self.file_item_menu, stretch=2)
+        main_layout.addWidget(self.fileItem_area, stretch=4)
+        main_layout.addLayout(self.fileItem_menu, stretch=2)
         main_layout.addLayout(self.display_menu, stretch=1)
         main_layout.addWidget(self.display_area, stretch=8)
         layout.addWidget(self.header)
@@ -429,7 +360,14 @@ class RemoteCameraInterface(QWidget):
 
         self.setLayout(layout)
 
+        # self.update_files() 
 
+    def update_files(self):
+        self.files = [file for file in sorted(os.listdir(self.file_dir)) if file.endswith(FILE_EXTENSION)]
+
+    # def refresh_file_order(self):
+    #     with open(os.path.join(FILE_DIR, "file_order.txt"), 'w') as f:
+    #         f.write("\n".join(self.files))
 
     """ 
     File Item Sidebar 
@@ -439,8 +377,6 @@ class RemoteCameraInterface(QWidget):
 
     """
 
-    def select_sidebar(self):
-        self.sidebar_selected = True
 
     def toggle_sidebar(self):
         self.hide_preview_images = not self.hide_preview_images
@@ -457,9 +393,10 @@ class RemoteCameraInterface(QWidget):
             self.preview_toggle_button.setText("Hide Preview Images")
 
     
-    def clear_fileItems(self):
-        while self.file_item_area_layout.count():
-            item = self.file_item_area_layout.takeAt(0)
+    def delete_all_fileItems(self):
+        self.fileItems = []
+        while self.fileItem_area_layout.count():
+            item = self.fileItem_area_layout.takeAt(0)
             widget = item.widget()
             if widget:
                 widget.deleteLater()
@@ -479,34 +416,356 @@ class RemoteCameraInterface(QWidget):
                 if nested_layout:
                     self.clear_layout(nested_layout)
 
-    def add_preview_image(self, image_path, update=False):
+    def add_fileItem(self, data=None, fp=None, curr_idx=None):
+        if curr_idx == None:
+            curr_idx = len(self.fileItems)
+
+            self.fileItems.append({
+                "fp": fp,
+                "data": data,
+            })
+
+        else: 
+            self.fileItems[curr_idx] = {
+                "fp": fp,
+                "data": data,
+            }
+
         # Create an instance of ScrollbarWidget
-        fileItem = ScrollbarWidget(image_path)
+        fileItem = ScrollbarWidget(data, fp)
 
         # Connect the mousePressEvent and mouseDoubleClickEvent to the respective functions
-        fileItem_id = len(self.fileItems)
-        fileItem.mousePressEvent = lambda event: self.process_fileItem_sel(fileItem_id)
-        fileItem.mouseDoubleClickEvent = lambda event: self.init_display_image(image_path)
+        fileItem.mousePressEvent = lambda event: self.process_fileItem_selection(curr_idx)
+        fileItem.mouseDoubleClickEvent = lambda event: self.init_display_image(fp)
 
-        self.fileItems.append({
-            "image_path": image_path,
-            "f": fileItem,
-        })
+        if self.hide_preview_images:
+            fileItem.preview_image.hide()
 
-        if update:
-            self.file_item_area_layout.addWidget(fileItem, alignment=Qt.AlignHCenter)
+        self.fileItems[curr_idx]["f"] = fileItem
 
-    def update_fileItems(self):
-        self.clear_fileItems()
+        self.fileItem_area_layout.addWidget(self.fileItems[curr_idx]["f"], alignment=Qt.AlignHCenter)
 
-        for fileItem in self.fileItems:
-            self.file_item_area_layout.addWidget(fileItem["f"], alignment=Qt.AlignHCenter)
+    # def update_fileItems(self):
+    #     self.delete_all_fileItems()
 
-    def parse_custom_sel(self):
+    #     for fileItem in self.fileItems:
+    #         self.fileItem_area_layout.addWidget(fileItem["f"], alignment=Qt.AlignHCenter)
+
+    """
+    Signals from 'File' dropdown actions
+    """
+
+    def open_folder(self):
+        # ask open path
+        file_dir = filedialog.askdirectory()
+        if file_dir == ():
+            return
+        
+        self.file_dir = file_dir
+        self.update_files()
+        # print(self.file_dir, self.files)
+        
+        self.delete_all_fileItems()
+        for fn in self.files:
+            fp = os.path.join(self.file_dir, fn)
+            with open(fp, 'rb') as f:
+                data = f.read()
+            self.add_fileItem(data=data,
+                                fp=fp)
+    
+        self.footer_label.setText(f"Successfully opened {self.file_dir} ({len(self.files)} files ending in {FILE_EXTENSION})")
+
+
+    def close_window(self):
+        exit()
+
+    def save_files_to(self):
+        if self.fileItems == []:
+            return
+        
+        self.saveTo_dir = filedialog.askdirectory()
+        if self.saveTo_dir == ():
+            return
+
+        # move self.file_dir to self.saveTo_dir
+        shutil.move(self.file_dir, self.saveTo_dir)
+        self.footer_label.setText(f"Successfully saved {self.file_dir} to {self.saveTo_dir}")
+
+        self.files = []
+        self.delete_all_fileItems()
+        
+        
+    def export_files(self):
+        if self.fileItems == []:
+            return
+        # Create the message box
+        msg = QMessageBox()
+        msg.setIcon(QMessageBox.Information)
+        msg.setText("Please select the export color option:")
+        msg.setWindowTitle("File export settings")
+
+        # Set standard buttons as the color options
+        
+        msg.addButton("Color", QMessageBox.YesRole)
+        msg.addButton("Grayscale", QMessageBox.YesRole)
+        msg.addButton("Black and White", QMessageBox.YesRole)
+        msg.setStandardButtons(QMessageBox.Cancel)
+
+        # Execute the message box and get the clicked button
+        result = msg.exec_()
+
+        # Handle the selected color option based on the clicked button
+        if msg.clickedButton().text() == "Color":
+            color_option = "color"
+        elif msg.clickedButton().text() == "Grayscale":
+            color_option = "grayscale"
+        elif msg.clickedButton().text() == "Black and White":
+            color_option = "b+w"
+        else:
+            return  # User clicked Cancel or closed the message box
+
+        # Ask for save path
+        options = QFileDialog.Options()
+        file_path, _ = QFileDialog.getSaveFileName(self, "Select Save Path", "", "PDF Files (*.pdf);;Text Files (*.txt);;All Files (*)", options=options)
+        if file_path:
+            # Save the selected file path
+            file_path += '.pdf'
+            print("Save Path:", file_path)
+
+            # Call the function to be implemented with color_option and file_path as arguments
+            self.export_with_color_option(color_option, file_path)
+
+
+    def export_with_color_option(self, color_option, save_path, margin=0.05):
+        # Create a PDF document
+        c = canvas.Canvas(save_path, pagesize=letter)
+
+        # Calculate the available image area in the PDF with margins
+        page_width, page_height = letter
+        image_area_width = page_width * (1 - 2 * margin)
+        image_area_height = page_height * (1 - 2 * margin)
+
+        for image_path in self.files:
+            # Load the image using PIL
+            image = PIL.Image.open(os.path.join(self.file_dir, image_path))
+
+            if color_option == "color":
+                pass  # No modification required for colored images
+            elif color_option == "grayscale":
+                # Convert the image to grayscale using PIL
+                image = PIL.ImageOps.grayscale(image)
+            elif color_option == "b+w":
+                # Convert the image to black and white (threshold=128) using PIL
+                image = image.convert("L").point(lambda x: 0 if x < 128 else 255, '1')
+
+            # Calculate the aspect ratio of the image
+            aspect_ratio = image.width / float(image.height)
+
+            # Calculate the new width and height to fit in the available image area
+            if image.height > image.width:
+                new_height = image_area_height
+                new_width = new_height * aspect_ratio
+            else:
+                new_width = image_area_width
+                new_height = new_width / aspect_ratio
+
+            # Resize the image
+            image = image.resize((int(new_width), int(new_height)), PIL.Image.LANCZOS)
+
+            # Calculate the position to center the image in the PDF
+            x = (page_width - image.width) / 2
+            y = (page_height - image.height) / 2
+
+            # Draw the image on the PDF
+            c.drawInlineImage(image, x, y, width=image.width, height=image.height)
+
+            # Add a new page for the next image
+            c.showPage()
+
+        # Save the PDF
+        c.save()
+
+        self.footer_label.setText(f"Successfully exported {len(self.files)} files to {save_path}")
+
+    """
+    Signals from 'Selection' dropdown actions
+    """
+
+    def popup(self, title, message, icon="info", type="yesno"):
+        assert icon in self.icon_lookup.keys(), f"Invalid icon type: {icon}"
+        # qt popup dialog for confirming an action
+        msg = QMessageBox()
+        msg.setIcon(self.icon_lookup[icon])
+        msg.setText(message)
+        msg.setWindowTitle(title)
+
+        if type == "yesno":
+            msg.setStandardButtons(QMessageBox.Yes | QMessageBox.No)
+            return msg.exec_() == QMessageBox.Yes
+        elif type == "ok":
+            msg.setStandardButtons(QMessageBox.Ok)
+            return msg.exec_() == QMessageBox.Ok
+        else:
+            raise ValueError(f"Invalid popup type: {type}")
+
+    def select_all_fileItems(self):
+        self.curr_fileIdxs = list(range(len(self.fileItems)))
+        self.update_fileItem_selection_drawer()
+
+    def clear_fileItem_selection(self):
+        self.curr_fileIdxs = []
+        self.update_fileItem_selection_drawer()
+
+    def delete_fileItem_selection(self):
+        # obtain confirmation from the user
+        selected_count = len(self.curr_fileIdxs)
+        max_list_length = 10
+        confirmation_message = f"Are you sure you want to delete the following {selected_count} files?\nThis action cannot be undone!\n\n"
+
+        if selected_count > max_list_length:
+            for idx in self.curr_fileIdxs[:max_list_length]:
+                confirmation_message += f"{self.fileItems[idx]['fp']}\n"
+            confirmation_message += f"...and {selected_count-max_list_length} more\n"
+        else:
+            for idx in self.curr_fileIdxs:
+                confirmation_message += f"{self.fileItems[idx]['fp']}\n"
+
+        response = self.popup("Delete Selection", 
+                                confirmation_message,
+                                icon="warning")
+        if response == False:
+            return 
+        
+        # delete the selected images from the file system
+        for idx in self.curr_fileIdxs:
+            fileItem = self.fileItems[idx]
+            image_path = fileItem["fp"]
+            os.remove(image_path)
+
+        # Sort the selected indices in reverse order to avoid issues with index shifting
+        curr_fileIdxs_sorted = sorted(self.curr_fileIdxs, reverse=True)
+
+        # the next empty idx that we will start with when moving the file items 
+        # after the deleted items
+        #
+        # also a deletion range for the fileItem widgets that we have to delete 
+        # and replace with new widgets that have updated, correct indices
+        next_empty_idx = curr_fileIdxs_sorted[-1]
+        deletion_range = list(range(next_empty_idx, len(self.fileItems)))[::-1]
+
+        # delete the fileItems from the fileItems list
+        for idx in curr_fileIdxs_sorted: 
+            del self.fileItems[idx]
+
+        # Clear the current selection
+        self.curr_fileIdxs.clear()
+
+        # Update the fileItem_area_layout by removing the widgets for the deleted elements
+        for idx in deletion_range:
+
+            widget_to_remove = self.fileItem_area_layout.itemAt(idx).widget()
+            self.fileItem_area_layout.removeWidget(widget_to_remove)
+
+            # Ensure the widget is also deleted to release resources
+            widget_to_remove.deleteLater()
+
+        # now we update the widgets that come after the deleted widgets
+        for idx in range(len(self.fileItems)):
+            if idx < next_empty_idx:
+                continue
+            data = self.fileItems[idx]["data"]
+            fp = self.fileItems[idx]["fp"]
+            self.add_fileItem(data=data, fp=fp,
+                                curr_idx=idx)
+
+        # self.update_files()
+        # self.refresh_file_order()
+
+    def rescan_fileItem_selection(self):
+        # Implementation for rescanning the selection images
+        pass
+
+    def move_fileItem_selection(self):
+        if len(self.curr_fileIdxs) == 0 or not check_consecutive(self.curr_fileIdxs):
+            return
+        
+        # ask user to enter the filename where the selection will be moved to:
+        fn_as_position, ok = QInputDialog.getText(self, 'Move Selection', 
+                                                'Enter filename where the selection will be moved to:')
+        
+        if not ok:
+            return
+        
+        if fn_as_position not in self.files:
+            self.popup("Move Selection",
+                        f"Filename not found: {fn_as_position}",
+                        icon="error",
+                        type="ok")
+            return 
+
+        # self.update_files() 
+        if self.files.index(fn_as_position) in self.curr_fileIdxs:
+            self.popup("Move Selection",
+                        f"Cannot move selection to itself!",
+                        icon="error",
+                        type="ok")
+            return
+        
+        # obtain the index of fn as position in self.files
+        # for self.files, move the selection to the position of fn_as_position
+
+        moveTo_position = self.files.index(fn_as_position)
+        fn_selection = [self.files[idx] for idx in self.curr_fileIdxs]
+
+        # Sort the selected indices in reverse order to avoid issues with index shifting
+        curr_fileIdxs_sorted = sorted(self.curr_fileIdxs, reverse=True)
+
+        # the next empty idx that we will start with when moving the file items 
+        # after the deleted items
+        #
+        # also a deletion range for the fileItem widgets that we have to delete 
+        # and replace with new widgets that have updated, correct indices
+        next_empty_idx = curr_fileIdxs_sorted[-1]
+        deletion_range = list(range(next_empty_idx, len(self.fileItems)))[::-1]
+
+        # delete the fileItems from the fileItems list
+        for idx in curr_fileIdxs_sorted: 
+            del self.fileItems[idx]
+
+        # Clear the current selection
+        self.curr_fileIdxs.clear()
+
+        # Update the fileItem_area_layout by removing the widgets for the deleted elements
+        for idx in deletion_range:
+
+            widget_to_remove = self.fileItem_area_layout.itemAt(idx).widget()
+            self.fileItem_area_layout.removeWidget(widget_to_remove)
+
+            # Ensure the widget is also deleted to release resources
+            widget_to_remove.deleteLater()
+
+        # now we update the widgets that come after the deleted widgets
+        for idx in range(len(self.fileItems)):
+            if idx < next_empty_idx:
+                continue
+            data = self.fileItems[idx]["data"]
+            fp = self.fileItems[idx]["fp"]
+            self.add_fileItem(data=data, fp=fp,
+                                curr_idx=idx)
+
+        # self.update_files()
+        # self.refresh_file_order()
+
+
+    def discard_unselected(self):
+        # Implementation for discarding images not part of the selection subset
+        pass
+
+    def parse_custom_fileItem_selection(self):
         self.curr_fileIdxs = []
 
-        custom_sel = self.custom_sel.text()
-        splits = [text.strip() for text in custom_sel.split(",") if text.strip() != ""]
+        custom_fileItem_selection = self.custom_fileItem_selection.text()
+        splits = [text.strip() for text in custom_fileItem_selection.split(",") if text.strip() != ""]
 
         for split in splits:
             split = split.split("-")
@@ -531,32 +790,32 @@ class RemoteCameraInterface(QWidget):
                 print("Invalid input")
         
         self.curr_fileIdxs = list(set(self.curr_fileIdxs))
-        print(self.curr_fileIdxs)
 
-        self.update_selection_indicators()
+        self.update_fileItem_selection_drawer()
 
     """
     Process the selection of a single file item. 
     Might be pared with a Shift event to select a range of file items.
     """
-    def process_fileItem_sel(self, fileItem_id):
+    def process_fileItem_selection(self, fileItem_idx):
+        # print("fileItem_idx ", fileItem_idx)
          
         # shift event
         if QApplication.keyboardModifiers() == Qt.ShiftModifier:
             # no previous selections; same as selecting a single file item
             if self.curr_fileIdxs == [] or \
-                len(self.curr_fileIdxs) == 1 and self.curr_fileIdxs[0] == fileItem_id:
-                self.curr_fileIdxs = [fileItem_id]
-                self.update_selection_indicators()
+                len(self.curr_fileIdxs) == 1 and self.curr_fileIdxs[0] == fileItem_idx:
+                self.curr_fileIdxs = [fileItem_idx]
+                self.update_fileItem_selection_drawer()
 
             else:
 
                 reverse = False
-                if fileItem_id > self.curr_fileIdxs[0]:
+                if fileItem_idx > self.curr_fileIdxs[0]:
                     start = self.curr_fileIdxs[0]
-                    end = fileItem_id
+                    end = fileItem_idx
                 else:
-                    start = fileItem_id
+                    start = fileItem_idx
                     end = self.curr_fileIdxs[0]
                     reverse = True
 
@@ -564,7 +823,7 @@ class RemoteCameraInterface(QWidget):
                 if reverse:
                     self.curr_fileIdxs.reverse()
 
-                self.update_selection_indicators()
+                self.update_fileItem_selection_drawer()
 
                 """
                 We reverse the order of the last selected file item indices.
@@ -587,20 +846,14 @@ class RemoteCameraInterface(QWidget):
                 In summary, we reverse the order of the PSR if the shift-selected file (B) is less than the initial file (A).
                 """
         else:        
-            self.curr_fileIdxs = [fileItem_id]
-            self.update_selection_indicators()
+            self.curr_fileIdxs = [fileItem_idx]
+            self.update_fileItem_selection_drawer()
 
-    """
-    Select all file items.
-    """
-    def sel_all_fileItems(self):
-        self.curr_fileIdxs = list(range(len(self.fileItems)))
-        self.update_selection_indicators()
 
     """
     Update the file items based on the current selection.
     """
-    def update_selection_indicators(self):
+    def update_fileItem_selection_drawer(self):
         if self.curr_fileIdxs == [] and self.prev_fileIdxs == []:
             return 
         
@@ -619,9 +872,11 @@ class RemoteCameraInterface(QWidget):
         # update the previous selection
         self.prev_fileIdxs = self.curr_fileIdxs
 
+        if len(self.curr_fileIdxs) == 0:
+            self.footer_label.setText("")
         if len(self.curr_fileIdxs) == 1:
-            sel_fn = self.fileItems[self.curr_fileIdxs[0]]["image_path"].split("/")[-1]
-            self.footer_label.setText(f'"{sel_fn}" selected')
+            selected_filename = self.fileItems[self.curr_fileIdxs[0]]["fp"].split("/")[-1]
+            self.footer_label.setText(f'"{selected_filename}" selected')
         else: 
             self.footer_label.setText(f"{len(self.curr_fileIdxs)} files selected")
        
@@ -659,9 +914,9 @@ class RemoteCameraInterface(QWidget):
         self.update_display_image()
 
 
-    def init_display_image(self, image_path):
+    def init_display_image(self, fp):
         self.display_image_config = {
-            "image_path": image_path,
+            "fp": fp,
             "scale_factor": self.default_scale_idx,
             "original_size": None,
             "pixmap": None,
@@ -669,7 +924,7 @@ class RemoteCameraInterface(QWidget):
         self.update_zoom_percentage()
 
         # Open the original image to get config
-        with open(self.display_image_config["image_path"], 'rb') as f:
+        with open(self.display_image_config["fp"], 'rb') as f:
             image_data = f.read()
 
         image = QImage.fromData(image_data)
@@ -700,16 +955,21 @@ def main():
     app = QApplication(sys.argv)
     window = RemoteCameraInterface()
 
-    # go to samples folder and for each sample (.jpg) file, add it to the file_item area
-    samples = sorted(os.listdir('samples'))
+    # go to samples folder and for each sample (.jpg) file, add it to the fileItem area
+    # files = [file for file in sorted(os.listdir(FILE_DIR)) if file.endswith(FILE_EXTENSION)]
+    # # write the files to a txt file in FILE_DIR for debugging and ordering purposes
+    # with open(os.path.join(FILE_DIR, "file_order.txt"), 'w') as f:
+    #     f.write("\n".join(files))
 
-
-    for sample in samples:
-        if sample.endswith('.jpg'):
-            image_path = os.path.join('samples', sample)
-            window.add_preview_image(image_path)
-        
-    window.update_fileItems()
+    # for fn in files:
+    #     fp = os.path.join(FILE_DIR, fn)
+    #     with open(fp, 'rb') as f:
+    #         data = f.read()
+    #     window.add_fileItem(data=data,
+    #                         fp=fp)
+    
+    
+    # window.update_fileItems()
 
     window.show()
 
