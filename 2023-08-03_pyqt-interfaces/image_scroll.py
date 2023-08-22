@@ -14,7 +14,6 @@ from tkinter import filedialog
 from tqdm import tqdm
 
 
-
 from PyQt5.QtWidgets import QApplication, QScrollArea, QVBoxLayout, QHBoxLayout, QLabel, QLineEdit, QWidget, QPushButton, QMenu, QAction, QMessageBox, QInputDialog, QFileDialog
 from PyQt5.QtCore import Qt, pyqtSignal
 from PyQt5.QtGui import QImage, QPixmap

@@ -1,0 +1,13 @@
+.mtk1: variable names 
+.mtk3: python function (plt.plot, plt.show, etc)
+.mtk4: parameter
+.mtk5: comment (text)
+.mtk6: value (number, etc)
+.mtk8: class self
+.mtk9: keyword (if, else, etc)
+.mtk10: ' and "
+.mkt11: equals sign, double equals sign
+.mtk12: 
+.mkt13: string, triple quotes
+.mktb: bold 
+.mkti: italic
